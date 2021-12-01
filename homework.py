@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from http import HTTPStatus
 
 import requests
 import telegram
@@ -21,7 +22,7 @@ RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
 HEADERS = {'Authorization': f'OAuth {PRACTICUM_TOKEN}'}
 
-HOMEWORK_STATUSES = {
+HOMEWORK_VERDICTS = {
     'approved': 'Работа проверена: ревьюеру всё понравилось. Ура!',
     'reviewing': 'Работа взята на проверку ревьюером.',
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
@@ -47,6 +48,7 @@ def send_message(bot, message):
         return bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
     except Exception as error:
         logger.error(f'Не удалось отправить сообщение {error}', exc_info=True)
+        raise exceptions.SendMessageException(error)
 
 
 def get_api_answer(current_timestamp):
@@ -55,14 +57,15 @@ def get_api_answer(current_timestamp):
     params = {'from_date': timestamp}
     try:
         answer = requests.get(ENDPOINT, headers=HEADERS, params=params)
-    except Exception as error:
-        logger.error(
-            f'Не удалось получить доступ к API {error}',
-            exc_info=True
-        )
-    if answer.status_code != 200:
+    except Exception:
+        error_message = 'Не удалось получить доступ к API'
+        logger.error(error_message)
+        raise exceptions.GetAPIException(error_message)
+    if answer.status_code != HTTPStatus.OK:
         answer.raise_for_status()
-        logger.error('Сбой в работе, неверный статус ответ')
+        error_message = 'Сбой в работе, неверный статус ответ'
+        logger.error(error_message)
+        raise exceptions.GetAPIException(error_message)
     return answer.json()
 
 
@@ -73,6 +76,7 @@ def check_response(response):
     except KeyError as error:
         error_message = f'В словаре нет ключа homeworks {error}'
         logger.error(error_message)
+        raise KeyError(error_message)
     if not home_list:
         error_message = 'В ответе API нет списка домашек'
         logger.error(error_message)
@@ -91,16 +95,18 @@ def check_response(response):
 def parse_status(homework):
     """Извлекает статус домашней работы."""
     try:
-        homework_name = homework.get('homework_name')
+        homework_name = homework['homework_name']
     except KeyError as error:
         error_message = f'В словаре нет ключа homework_name {error}'
         logger.error(error_message)
+        raise KeyError(error_message)
     try:
-        homework_status = homework.get('status')
+        homework_status = homework['status']
     except KeyError as error:
         error_message = f'В словаре нет ключа status {error}'
         logger.error(error_message)
-    verdict = HOMEWORK_STATUSES[homework_status]
+        raise KeyError(error_message)
+    verdict = HOMEWORK_VERDICTS[homework_status]
     if verdict is None:
         error_message = 'Отсутствует сообщение о статусе проверки'
         logger.error(error_message)
@@ -110,11 +116,7 @@ def parse_status(homework):
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
-    if PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        return True
-    else:
-        logger.critical('Отсутствует переменная окружения!')
-        return False
+    return all([PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID])
 
 
 def main():
@@ -131,6 +133,9 @@ def main():
                 check_response(response)
                 message = parse_status(response.get('homeworks')[0])
                 send_message(bot, message)
+            if not check_tokens():
+                logger.critical('Отсутствует переменная окружения!')
+                raise SystemExit()
             current_timestamp = int(time.time())
             time.sleep(RETRY_TIME)
         except Exception as error:
