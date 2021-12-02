@@ -16,7 +16,6 @@ PRACTICUM_TOKEN = os.getenv('TOKEN_PR')
 TELEGRAM_TOKEN = os.getenv('TOKEN_TG')
 TELEGRAM_CHAT_ID = os.getenv('CHAT_ID')
 
-TOKEN_LIST = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
 
 RETRY_TIME = 600
 ENDPOINT = 'https://practicum.yandex.ru/api/user_api/homework_statuses/'
@@ -116,7 +115,7 @@ def parse_status(homework):
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
-    return all([PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID])
+    return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
 
 
 def main():
